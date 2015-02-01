@@ -2,9 +2,8 @@ fs = require("fs-extended")
 async = require("async")
 JSZip = require("jszip")
 xmldom = require("xmldom")
-sflogin = require("./sflogin")
 path = require("path")
-
+extend = require('util')._extend
 
 
 # recursive('some/path', function (err, @files) {
@@ -27,6 +26,20 @@ class SFDeploy
   filterBy: []
   files:{}
   dirs:[]
+  testFiles:[]
+  allowedDeployOptions: [
+    'checkOnly',
+    'ignoreWarnings',
+    'performRetrieve',
+    'purgeOnDelete',
+    'rollbackOnError',
+    'runAllTests',
+    'runTests',
+    'singlePackage',
+    'allowMissingFiles',
+    'autoUpdatePackage',
+    'runPackagedTestsOnly'
+  ]
   deployOptions:
     # checkOnly:false
     # ignoreWarnings:false
@@ -34,20 +47,27 @@ class SFDeploy
     # purgeOnDelete:false
     rollbackOnError:false
     runAllTests:false
-    # runTests:[]
+    runTests:[]
     # singlePackage:true
     # allowMissingFiles:true
     # autoUpdatePackage:false
 
 
 
-  constructor: (rootPath, filterBy, conn, apiVersion) ->
+  constructor: (rootPath, filterBy, conn, apiVersion, options) ->
     @rootPath = rootPath
     @conn = conn
     @apiVersion = apiVersion
     @filterBy = filterBy
     @files = {}
     @dirs = []
+    for key, val of options when key in @allowedDeployOptions
+      v = val
+      if val is "true" then v = true
+      if val is "false" then v = false
+
+      @deployOptions[key] = v
+      console.log @deployOptions
 
 
   getMetadata: (cb) ->
@@ -69,10 +89,12 @@ class SFDeploy
   pathFilter: (itemPath) =>
 
     match = itemPath.match (/src\/(.*?)\//)
+
     # if itemPath.indexOf("-meta.xml") isnt -1
     #   return false
 
-    if (match? and match.length > 1) and (@dirs.length == 0 or match[1] in @dirs)
+
+    if (match? and match.length > 1 and match[1] in @dirs) or @dirs.length == 0
 
       return true unless @filterBy.length > 0
       i = 0
@@ -86,10 +108,11 @@ class SFDeploy
     return false
 
   createFileList: (cb) ->
-    @files = {}
+
     areadFile = (item,cb) =>
       fs.readFile path.join(@rootPath, item),{flag:"r"},(er,results) ->
         cb(er,results)
+
 
 
     fs.listFiles path.resolve(@rootPath),
@@ -101,9 +124,89 @@ class SFDeploy
 
         for data, i in results
           @files[files[i]] = data
-        cb? null, @files
+          
+          if @deployOptions.runPackagedTestsOnly
+            if data.toString('utf8').indexOf('@isTest') isnt -1
+              @deployOptions.runTests.push files[i].match(/[^\/]*(?=\.[^.]+($|\?))/)[0]
 
+        cb? null, @files, @testFiles
 
+  getTextFiles: () ->
+    textFiles = {}
+    for key, data of @files
+      textFiles[key] = 
+        text: data.toString('utf-8')
+
+    return textFiles
+
+  parseResult: (result) ->
+    # checkOnly
+    # completedDate
+    # createdBy
+    # createdByName
+    # createdDate
+    # details
+    # done
+    # id
+    # ignoreWarnings
+    # lastModifiedDate
+    # numberComponentErrors
+    # numberComponentsDeployed
+    # numberComponentsTotal
+    # numberTestErrors
+    # numberTestsCompleted
+    # numberTestsTotal
+    # rollbackOnError
+    # runTestsEnabled
+    # startDate
+    # status
+    # success
+    return null unless result?
+    parsed = result
+
+    parsed.createdDate = new Date(parsed.createdDate)
+    parsed.lastModifiedDate = new Date(parsed.lastModifiedDate)
+    parsed.startDate = new Date(parsed.startDate)
+    parsed.completedDate = new Date(parsed.completedDate)
+
+    parsed.files = []
+    return parsed unless result.details?
+    components = Array::concat(result.details?.componentSuccesses, result.details?.componentFailures)
+
+    total = 
+      percentage: 0
+      num: 0
+
+    for item in components when item?
+
+      for key, data of @files when key.indexOf(item.fileName.replace('unpackaged/', '')) isnt -1
+        parsed.files[key] = extend item
+        parsed.files[key].text = data.toString('utf-8')
+        parsed.files[key].createdDate = new Date(parsed.files[key].createdDate)
+        break
+
+    for item in result.details.runTestResult?.codeCoverage
+      if item.type is 'Class'
+        for key, data of @files when key.indexOf('classes/' + item.name + '.cls') >= 0
+          break unless parsed.files[key]?
+          parsed.files[key].testResults = extend item
+          parsed.files[key].testResults.coveragePercentage = 100 * ( item.numLocations - item.numLocationsNotCovered ) / item.numLocations
+          total.percentage += parsed.files[key].testResults.coveragePercentage
+          total.num++
+          break
+
+      if item.type is 'Trigger'
+        for key, data of @files when key.indexOf('triggers/' + item.name + '.trigger') >= 0
+          break unless parsed.files[key]?
+          parsed.files[key].testResults = extend item
+          parsed.files[key].testResults.coveragePercentage = 100 * ( item.numLocations - item.numLocationsNotCovered ) / item.numLocations
+          total.percentage += parsed.files[key].testResults.coveragePercentage
+          total.num++
+          break
+
+    parsed.totalCoverage = total.num is 0 ? 0 : total.percentage / total.num
+
+    return parsed
 
   checkStatus: (id, cb) ->
 
@@ -117,13 +220,13 @@ class SFDeploy
     #   total:1000000
     @conn.metadata.checkDeployStatus id, true, (er, fullResult) =>
       if fullResult.done
-        @deployCheckCB?(fullResult)
-        cb?(fullResult)
+        @deployCheckCB?(null, fullResult)
+        cb?(null, fullResult)
       #   # if fullResult.success then print.pt Array::concat.call fullResult.details.componentSuccesses
       #   # else print.pt Array::concat.call fullResult.details.componentFailures
       else
         @checkStatus(id, cb)
-        @deployCheckCB?(fullResult)
+        @deployCheckCB?(null, fullResult)
 
   deploy: (filterBy, cb) ->
     @filterBy = filterBy or @filterBy or []
@@ -164,7 +267,7 @@ class SFDeploy
 
     for fileName, data of @files when fileName.indexOf("-meta.xml") is -1
 
-      console.log(fileName)
+
 
       # throw "File not found: " + fileName unless files[fileName]?
       zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
@@ -178,7 +281,7 @@ class SFDeploy
 
       doc.documentElement.appendChild E("types", [
         T("members", fullName)
-        T("name", metadataObjectsByDir[typeDirName].xmlName)
+        T("name", metadataObjectsByDir[typeDirName]?.xmlName)
       ])
 
     doc.documentElement.appendChild T("version", @apiVersion)
@@ -192,37 +295,14 @@ class SFDeploy
 
     z = zip.generate type: "nodebuffer"
 
-    console.log @conn
+
+    delete @deployOptions.runPackagedTestsOnly
+
     p = @conn.metadata.deploy z, @deployOptions
     p.check (er, asyncResult) =>
-      if asyncResult?
-        @checkStatus asyncResult.id, cb
-      else
-        console.log er
-        # console.log 'done'
-        # cb?()
+      if er? then return cb er
 
-    # p.complete (asyncResult) ->
-      # console.log arguments
-    # .complete (er, data) ->
-      # console.log arguments
-      # @currentDeployStatus = result
-      # @checkStatus()
-
-
-
-#    @checkStatus()
-
-    # p.check().then() ->
-    # p.check().then (asyncResult) ->
-
-    # p.complete (er, data) ->
-
-      # print.pt deployResult.details.componentSuccesses
-
-      # cb? er, data
-
-    # updateStatus(conn,p)
+      if asyncResult? then @checkStatus asyncResult.id, cb
 
 
 module.exports = SFDeploy

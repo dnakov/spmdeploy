@@ -46,6 +46,8 @@ SFDeploy = (function() {
     runTests: []
   };
 
+  SFDeploy.prototype.showAllText = false;
+
   function SFDeploy(rootPath, filterBy, conn, apiVersion, options) {
     this.pathFilter = __bind(this.pathFilter, this);
     var key, v, val;
@@ -175,12 +177,14 @@ SFDeploy = (function() {
     parsed.lastModifiedDate = new Date(parsed.lastModifiedDate);
     parsed.startDate = new Date(parsed.startDate);
     parsed.completedDate = new Date(parsed.completedDate);
-    parsed.files = [];
+    parsed.files = {};
     if (result.details == null) {
       return parsed;
     }
     components = Array.prototype.concat((_ref = result.details) != null ? _ref.componentSuccesses : void 0, (_ref1 = result.details) != null ? _ref1.componentFailures : void 0);
     total = {
+      locations: 0,
+      notCovered: 0,
       percentage: 0,
       num: 0
     };
@@ -194,19 +198,24 @@ SFDeploy = (function() {
             continue;
           }
           parsed.files[key] = extend(item);
-          parsed.files[key].text = data.toString('utf-8');
+          if (this.showAllText || key.indexOf('.cls') !== -1 || key.indexOf('.trigger') !== -1) {
+            parsed.files[key].text = data.toString('utf-8');
+          }
           parsed.files[key].createdDate = new Date(parsed.files[key].createdDate);
           break;
         }
       }
     }
-    _ref4 = (_ref3 = result.details.runTestResult) != null ? _ref3.codeCoverage : void 0;
-    for (_j = 0, _len1 = _ref4.length; _j < _len1; _j++) {
-      item = _ref4[_j];
+    if (((_ref3 = result.details.runTestResult) != null ? _ref3.codeCoverage : void 0) == null) {
+      return parsed;
+    }
+    _ref5 = (_ref4 = result.details.runTestResult) != null ? _ref4.codeCoverage : void 0;
+    for (_j = 0, _len1 = _ref5.length; _j < _len1; _j++) {
+      item = _ref5[_j];
       if (item.type === 'Class') {
-        _ref5 = this.files;
-        for (key in _ref5) {
-          data = _ref5[key];
+        _ref6 = this.files;
+        for (key in _ref6) {
+          data = _ref6[key];
           if (!(key.indexOf('classes/' + item.name + '.cls') >= 0)) {
             continue;
           }
@@ -214,16 +223,22 @@ SFDeploy = (function() {
             break;
           }
           parsed.files[key].testResults = extend(item);
-          parsed.files[key].testResults.coveragePercentage = 100 * (item.numLocations - item.numLocationsNotCovered) / item.numLocations;
-          total.percentage += parsed.files[key].testResults.coveragePercentage;
+          parsed.files[key].testResults.locationsNotCovered = Array.prototype.concat(parsed.files[key].testResults.locationsNotCovered);
+          if (item.numLocations === null || item.numLocationsNotCovered === null) {
+            break;
+          }
+          parsed.files[key].testResults.coveragePercentage = 100 * (parseInt(item.numLocations) - parseInt(item.numLocationsNotCovered)) / parseInt(item.numLocations);
+          total.locations += parseInt(item.numLocations);
+          total.notCovered += parseInt(item.numLocationsNotCovered);
           total.num++;
+          console.log(total);
           break;
         }
       }
       if (item.type === 'Trigger') {
-        _ref6 = this.files;
-        for (key in _ref6) {
-          data = _ref6[key];
+        _ref7 = this.files;
+        for (key in _ref7) {
+          data = _ref7[key];
           if (!(key.indexOf('triggers/' + item.name + '.trigger') >= 0)) {
             continue;
           }
@@ -231,16 +246,18 @@ SFDeploy = (function() {
             break;
           }
           parsed.files[key].testResults = extend(item);
-          parsed.files[key].testResults.coveragePercentage = 100 * (item.numLocations - item.numLocationsNotCovered) / item.numLocations;
-          total.percentage += parsed.files[key].testResults.coveragePercentage;
+          if (item.numLocations === null || item.numLocationsNotCovered === null) {
+            break;
+          }
+          parsed.files[key].testResults.coveragePercentage = 100 * (parseInt(item.numLocations) - parseInt(item.numLocationsNotCovered)) / parseInt(item.numLocations);
+          total.locations += parseInt(item.numLocations);
+          total.notCovered += parseInt(item.numLocationsNotCovered);
           total.num++;
           break;
         }
       }
     }
-    parsed.totalCoverage = (_ref7 = total.num === 0) != null ? _ref7 : {
-      0: total.percentage / total.num
-    };
+    parsed.totalCoverage = total.num === 0 ? 0 : total.locations - total.notCovered / total.num;
     return parsed;
   };
 
@@ -251,7 +268,7 @@ SFDeploy = (function() {
           if (typeof _this.deployCheckCB === "function") {
             _this.deployCheckCB(null, fullResult);
           }
-          return typeof cb === "function" ? cb(null, fullResult) : void 0;
+          return typeof cb === "function" ? cb(null, _this.parseResult(fullResult)) : void 0;
         } else {
           _this.checkStatus(id, cb);
           return typeof _this.deployCheckCB === "function" ? _this.deployCheckCB(null, fullResult) : void 0;

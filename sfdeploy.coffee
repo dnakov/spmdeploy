@@ -51,6 +51,7 @@ class SFDeploy
     # singlePackage:true
     # allowMissingFiles:true
     # autoUpdatePackage:false
+  showAllText: false
 
 
 
@@ -169,42 +170,59 @@ class SFDeploy
     parsed.startDate = new Date(parsed.startDate)
     parsed.completedDate = new Date(parsed.completedDate)
 
-    parsed.files = []
+    parsed.files = {}
     return parsed unless result.details?
     components = Array::concat(result.details?.componentSuccesses, result.details?.componentFailures)
 
     total = 
+      locations: 0
+      notCovered: 0
       percentage: 0
       num: 0
 
     for item in components when item?
 
       for key, data of @files when key.indexOf(item.fileName.replace('unpackaged/', '')) isnt -1
+        
         parsed.files[key] = extend item
-        parsed.files[key].text = data.toString('utf-8')
+        if @showAllText or key.indexOf('.cls') isnt -1 or key.indexOf('.trigger') isnt -1
+          parsed.files[key].text = data.toString('utf-8')
+
         parsed.files[key].createdDate = new Date(parsed.files[key].createdDate)
         break
+
+    return parsed unless result.details.runTestResult?.codeCoverage?
 
     for item in result.details.runTestResult?.codeCoverage
       if item.type is 'Class'
         for key, data of @files when key.indexOf('classes/' + item.name + '.cls') >= 0
           break unless parsed.files[key]?
           parsed.files[key].testResults = extend item
-          parsed.files[key].testResults.coveragePercentage = 100 * ( item.numLocations - item.numLocationsNotCovered ) / item.numLocations
-          total.percentage += parsed.files[key].testResults.coveragePercentage
+          parsed.files[key].testResults.locationsNotCovered = Array::concat parsed.files[key].testResults.locationsNotCovered
+
+          break if item.numLocations == null or item.numLocationsNotCovered == null
+          
+          parsed.files[key].testResults.coveragePercentage = 100 * ( parseInt(item.numLocations) - parseInt(item.numLocationsNotCovered) ) / parseInt(item.numLocations)
+          total.locations += parseInt item.numLocations
+          total.notCovered += parseInt item.numLocationsNotCovered
           total.num++
+          console.log total
           break
 
       if item.type is 'Trigger'
         for key, data of @files when key.indexOf('triggers/' + item.name + '.trigger') >= 0
           break unless parsed.files[key]?
           parsed.files[key].testResults = extend item
-          parsed.files[key].testResults.coveragePercentage = 100 * ( item.numLocations - item.numLocationsNotCovered ) / item.numLocations
-          total.percentage += parsed.files[key].testResults.coveragePercentage
+          
+          break if item.numLocations == null or item.numLocationsNotCovered == null
+
+          parsed.files[key].testResults.coveragePercentage = 100 * ( parseInt(item.numLocations) - parseInt(item.numLocationsNotCovered) ) / parseInt(item.numLocations)
+          total.locations += parseInt item.numLocations
+          total.notCovered += parseInt item.numLocationsNotCovered
           total.num++
           break
 
-    parsed.totalCoverage = total.num is 0 ? 0 : total.percentage / total.num
+    parsed.totalCoverage = if total.num is 0 then 0 else total.locations - total.notCovered  / total.num
 
     return parsed
 
@@ -219,9 +237,10 @@ class SFDeploy
     #   width:20
     #   total:1000000
     @conn.metadata.checkDeployStatus id, true, (er, fullResult) =>
+      
       if fullResult.done
         @deployCheckCB?(null, fullResult)
-        cb?(null, fullResult)
+        cb?(null, @parseResult(fullResult))
       #   # if fullResult.success then print.pt Array::concat.call fullResult.details.componentSuccesses
       #   # else print.pt Array::concat.call fullResult.details.componentFailures
       else
@@ -231,6 +250,7 @@ class SFDeploy
   deploy: (filterBy, cb) ->
     @filterBy = filterBy or @filterBy or []
     @getMetadata (er, data) =>
+
       @createFileList (er, files) =>
         @_deploy files, cb
 

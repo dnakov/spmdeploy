@@ -187,7 +187,6 @@ SFLogin = (function() {
       version: this.activeLogin.apiVersion
     });
     return conn.login(this.activeLogin.username, this.activeLogin.password, function(er, conn2) {
-      console.log(arguments);
       if (er != null) {
         return typeof cb === "function" ? cb(er) : void 0;
       }

@@ -133,7 +133,6 @@ class SFLogin
     )
 
     conn.login @activeLogin.username, @activeLogin.password, (er, conn2) ->
-      console.log arguments
       return cb?(er) if er?
 
       cb?(null, conn)

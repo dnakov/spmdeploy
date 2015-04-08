@@ -5,7 +5,6 @@ xmldom = require("xmldom")
 path = require("path")
 extend = require('util')._extend
 
-
 # recursive('some/path', function (err, @files) {
 #   // Files is an array of filename
 
@@ -13,7 +12,6 @@ extend = require('util')._extend
 
 
 class SFDeploy
-
   rootPath: null
   currentDeployStatus: {}
   deployCheckCB: ->
@@ -68,11 +66,9 @@ class SFDeploy
       if val is "false" then v = false
 
       @deployOptions[key] = v
-      console.log @deployOptions
-
 
   getMetadata: (cb) ->
-    return cb?() unless @conn?
+    return cb?('blah') unless @conn?
     @conn.metadata.describe @apiVersion
     .then (meta) =>
       @metadata = meta

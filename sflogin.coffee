@@ -1,13 +1,25 @@
 jsforce = require("jsforce")
+Promise = require("jsforce/lib/promise")
 q = require("q")
 fs = require("graceful-fs")
 iprompt = require("inquirer").prompt
 path = require("path")
-keytar = require "keytar"
+try
+  keytar = require "keytar"
+catch error
+nopt = require "nopt"
+crypto = require "crypto"
 color = require "cli-color"
 basedir = process.cwd()
 
 class SFLogin
+  knownOpts: 
+    username: String
+    password: String
+    "api-version": String
+    "login-url": String
+  shortHands: {}
+
   passFile: path.resolve(process.env.HOME or process.env.HOMEPATH or process.env.USERPROFILE, "spm.json")
   prompt: (questions) ->
     d = q.defer()
@@ -56,62 +68,85 @@ class SFLogin
     iprompt questions, (params) =>
       @params = params
       isdone = {};
-
+      cipher = crypto.createCipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB') 
+      encrypted = cipher.update(@params.password, 'utf8', 'hex') + cipher.final('hex')
 
       fs.readFile @passFile, "utf8", (er, data) =>
 
         lst = if data? then JSON.parse(data) else {sfdc:{}}
         hash = @params.loginUrl + '$' + @params.username
-        if keytar.getPassword('SPM-SFDC: ' + @params.loginUrl, @params.username) is null
-          keytar.addPassword 'SPM-SFDC: ' + @params.loginUrl, @params.username, @params.password
+        if keytar?.getPassword('SPM-SFDC: ' + @params.loginUrl, @params.username) is null
+          keytar?.addPassword 'SPM-SFDC: ' + @params.loginUrl, @params.username, @params.password
         else
-          keytar.replacePassword('SPM-SFDC: ' + @params.loginUrl, @params.username, @params.password)
+          keytar?.replacePassword('SPM-SFDC: ' + @params.loginUrl, @params.username, @params.password)
         lst.sfdc[hash] =
           lastMod: new Date()
           username: @params.username
           loginUrl: @params.loginUrl
           apiVersion: @params.apiVersion
+          password: encrypted
         @activeLogin =
           lastMod: new Date()
           username: @params.username
           loginUrl: @params.loginUrl
           apiVersion: @params.apiVersion
-          password: keytar.getPassword('SPM-SFDC: ' + @params.loginUrl, @params.username)
+          password: @params.password
         @writeFile @passFile, JSON.stringify(lst), "utf8", (er, success) =>
         cb?()
 
   chooseLogin: (cb) ->
-    fs.readFile @passFile, 'utf-8', (er, data) =>
-      lst = JSON.parse(data)
-      choices = []
-      for key,value of lst.sfdc
-        choices.push
-          value:value
-          name:value.username + ' | ' + color.blue(value.loginUrl)
-          dt:value
-      choices.sort (a,b) ->
-        date1 = new Date(a.lastMod)
-        date2 = new Date(b.lastMod)
-        if date1 > date2 then return -1
-        if date1 < date2 then return 1
-        return 0
-      questions =
-        name: 'login'
-        type:'list'
-        choices: choices
-        message: 'Select Login: '
-      iprompt questions, (answer) =>
-        @activeLogin =
-          loginUrl: answer.login.loginUrl
-          username: answer.login.username
-          apiVersion: answer.login.apiVersion
-          password: keytar.getPassword('SPM-SFDC: ' + answer.login.loginUrl, answer.login.username)
-        cb?()
+    if process.argv.indexOf('-m') isnt -1
+      @manualLogin()
+      cb?()
+    else 
+      fs.readFile @passFile, 'utf-8', (er, data) =>
+        lst = JSON.parse(data)
+        choices = []
+        for key,value of lst.sfdc
+          choices.push
+            value:value
+            name:value.username + ' | ' + color.blue(value.loginUrl)
+            dt:value
+        choices.sort (a,b) ->
+          date1 = new Date(a.lastMod)
+          date2 = new Date(b.lastMod)
+          if date1 > date2 then return -1
+          if date1 < date2 then return 1
+          return 0
+        questions =
+          name: 'login'
+          type:'list'
+          choices: choices
+          message: 'Select Login: '
+        iprompt questions, (answer) =>
+          if keytar?
+            pass = keytar?.getPassword('SPM-SFDC: ' + answer.login.loginUrl, answer.login.username)
+          else
+            decipher = crypto.createDecipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB');
+            pass = decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8');
 
+          @activeLogin =
+            loginUrl: answer.login.loginUrl
+            username: answer.login.username
+            apiVersion: answer.login.apiVersion
+            password: pass
+          cb?()
+
+  manualLogin: () ->
+    args = nopt(@knownOpts, @shortHands)
+
+    @activeLogin =
+      username: args.username
+      password: args.password
+      loginUrl: args['login-url']
+      apiVersion: args['api-version']  
 
   login: (reinit, cb) ->
+    if process.argv.indexOf('-m') isnt -1
+      @manualLogin()
     if reinit isnt true or @activeLogin?
-      @_login cb
+      @_login (er, data) =>
+        cb?(null, data)
     else
       @initLogin (data) =>
         @_login (er, data) =>

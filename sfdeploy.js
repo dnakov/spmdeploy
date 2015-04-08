@@ -70,13 +70,12 @@ SFDeploy = (function() {
         v = false;
       }
       this.deployOptions[key] = v;
-      console.log(this.deployOptions);
     }
   }
 
   SFDeploy.prototype.getMetadata = function(cb) {
     if (this.conn == null) {
-      return typeof cb === "function" ? cb() : void 0;
+      return typeof cb === "function" ? cb('blah') : void 0;
     }
     return this.conn.metadata.describe(this.apiVersion).then((function(_this) {
       return function(meta) {

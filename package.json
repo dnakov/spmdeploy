@@ -1,6 +1,6 @@
 {
   "name": "@spm/salesforce",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "SPM module for salesforce deployments",
   "main": "main.js",
   "scripts": {
@@ -16,10 +16,32 @@
     "inquirer": "^0.6.0",
     "jsforce": "^1.2.0",
     "jszip": "^2.4.0",
-    "keytar": "^2.0.3",
     "mocha": "^2.1.0",
+    "nopt": "^3.0.1",
     "path": "^0.4.9",
     "q": "^1.0.1",
     "xmldom": "^0.1.19"
-  }
+  },
+  "gitHead": "4e9201cd39aba403429ae5c4d605899df65a52cd",
+  "_id": "@spm/salesforce@1.0.0",
+  "_shasum": "b07920db4e64bcc745a72e715d403567e0d759fa",
+  "_from": "@spm/salesforce@>=1.0.0 <2.0.0",
+  "_npmVersion": "2.1.18",
+  "_nodeVersion": "0.10.31",
+  "_npmUser": {
+    "name": "daniel",
+    "email": "d@d.com"
+  },
+  "maintainers": [
+    {
+      "name": "daniel",
+      "email": "d@d.com"
+    }
+  ],
+  "dist": {
+    "shasum": "b07920db4e64bcc745a72e715d403567e0d759fa",
+    "tarball": "http://registry.spm.io/@spm/salesforce/-/@spm/salesforce-1.0.0.tgz"
+  },
+  "directories": {},
+  "_resolved": "https://registry.spm.io/@spm/salesforce/-/@spm/salesforce-1.0.0.tgz"
 }

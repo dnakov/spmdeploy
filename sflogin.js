@@ -212,9 +212,7 @@ SFLogin = (function() {
         return function(data) {
           return _this._login(function(er, data) {
             if (er != null) {
-              if (typeof cb === "function") {
-                cb(er);
-              }
+              return typeof cb === "function" ? cb(er) : void 0;
             }
             return typeof cb === "function" ? cb(null, data) : void 0;
           });

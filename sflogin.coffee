@@ -149,8 +149,8 @@ class SFLogin
     else
       @initLogin (data) =>
         @_login (er, data) =>
-          cb? er if er?
-          cb? null, data
+          return cb? er if er?
+          return cb? null, data
 
   _login: (cb) ->
     # return Promise.all([

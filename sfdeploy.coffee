@@ -4,6 +4,7 @@ JSZip = require("jszip")
 xmldom = require("xmldom")
 path = require("path")
 extend = require('util')._extend
+nopt = require "nopt"
 
 # recursive('some/path', function (err, @files) {
 #   // Files is an array of filename
@@ -12,6 +13,20 @@ extend = require('util')._extend
 
 
 class SFDeploy
+  knownOpts: 
+    'checkOnly': Boolean
+    'ignoreWarnings': Boolean
+    'performRetrieve': Boolean
+    'purgeOnDelete': Boolean
+    'rollbackOnError': Boolean
+    'runAllTests': Boolean
+    'runTests': Boolean
+    'singlePackage': Boolean
+    'allowMissingFiles': Boolean
+    'autoUpdatePackage': Boolean
+    'runPackagedTestsOnly': Boolean
+  shortHands: {}
+
   rootPath: null
   currentDeployStatus: {}
   deployCheckCB: ->
@@ -121,7 +136,6 @@ class SFDeploy
 
         for data, i in results
           @files[files[i]] = data
-          
           if @deployOptions.runPackagedTestsOnly
             if data.toString('utf8').indexOf('@isTest') isnt -1
               @deployOptions.runTests.push files[i].match(/[^\/]*(?=\.[^.]+($|\?))/)[0]
@@ -243,6 +257,12 @@ class SFDeploy
         @checkStatus(id, cb)
         @deployCheckCB?(null, fullResult)
 
+  getDeployOptions: ->
+    if process.argv.indexOf('-m') is -1
+      args = nopt(@knownOpts, @shortHands)
+      for key, value of args
+        if @deployOptions[key]? then @deployOptions[key] = value
+    console.log @deployOptions
   deploy: (filterBy, cb) ->
     @filterBy = filterBy or @filterBy or []
     @getMetadata (er, data) =>
@@ -256,6 +276,9 @@ class SFDeploy
       @_deploy files, cb
 
   _deploy: (files, cb) ->
+    
+    @getDeployOptions()
+
     @files = files or @files
 
 
@@ -313,7 +336,7 @@ class SFDeploy
 
 
     delete @deployOptions.runPackagedTestsOnly
-
+    console.log @deployOptions
     p = @conn.metadata.deploy z, @deployOptions
     p.check (er, asyncResult) =>
       if er? then return cb er

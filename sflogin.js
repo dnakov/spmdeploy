@@ -92,7 +92,7 @@ SFLogin = (function() {
         _this.params = params;
         isdone = {};
         cipher = crypto.createCipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB');
-        encrypted = cipher.update(_this.params.password, 'utf8', 'hex') + cipher.final('hex');
+        encrypted = _this.params.password != null ? cipher.update(_this.params.password, 'utf8', 'hex') + cipher.final('hex') : null;
         return fs.readFile(_this.passFile, "utf8", function(er, data) {
           var hash, lst;
           lst = data != null ? JSON.parse(data) : {
@@ -131,8 +131,7 @@ SFLogin = (function() {
 
   SFLogin.prototype.chooseLogin = function(cb) {
     if (process.argv.indexOf('-m') !== -1) {
-      this.manualLogin();
-      return typeof cb === "function" ? cb() : void 0;
+      return typeof cb === "function" ? cb(null, this.manualLogin()) : void 0;
     } else {
       return fs.readFile(this.passFile, 'utf-8', (function(_this) {
         return function(er, data) {
@@ -172,7 +171,7 @@ SFLogin = (function() {
               pass = keytar != null ? keytar.getPassword('SPM-SFDC: ' + answer.login.loginUrl, answer.login.username) : void 0;
             } else {
               decipher = crypto.createDecipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB');
-              pass = decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8');
+              pass = answer.login.password != null ? decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8') : null;
             }
             _this.activeLogin = {
               loginUrl: answer.login.loginUrl,
@@ -180,7 +179,7 @@ SFLogin = (function() {
               apiVersion: answer.login.apiVersion,
               password: pass
             };
-            return typeof cb === "function" ? cb() : void 0;
+            return typeof cb === "function" ? cb(null, _this.activeLogin) : void 0;
           });
         };
       })(this));

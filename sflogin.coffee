@@ -69,7 +69,7 @@ class SFLogin
       @params = params
       isdone = {};
       cipher = crypto.createCipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB') 
-      encrypted = cipher.update(@params.password, 'utf8', 'hex') + cipher.final('hex')
+      encrypted = if @params.password? then cipher.update(@params.password, 'utf8', 'hex') + cipher.final('hex') else null
 
       fs.readFile @passFile, "utf8", (er, data) =>
 
@@ -96,8 +96,7 @@ class SFLogin
 
   chooseLogin: (cb) ->
     if process.argv.indexOf('-m') isnt -1
-      @manualLogin()
-      cb?()
+      cb?(null, @manualLogin())
     else 
       fs.readFile @passFile, 'utf-8', (er, data) =>
         lst = JSON.parse(data)
@@ -122,15 +121,15 @@ class SFLogin
           if keytar?
             pass = keytar?.getPassword('SPM-SFDC: ' + answer.login.loginUrl, answer.login.username)
           else
-            decipher = crypto.createDecipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB');
-            pass = decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8');
+            decipher = crypto.createDecipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB')
+            pass = if answer.login.password? then decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8') else null
 
           @activeLogin =
             loginUrl: answer.login.loginUrl
             username: answer.login.username
             apiVersion: answer.login.apiVersion
             password: pass
-          cb?()
+          cb?(null, @activeLogin)
 
   manualLogin: () ->
     args = nopt(@knownOpts, @shortHands)

@@ -79,7 +79,6 @@ class SFDeploy
 
 
   constructor: (rootPath, filterByOld, conn, options) ->   
-    console.log(options.filter)
     @rootPath = rootPath
     @conn = conn
     @filterBy = Array::concat([], options.filter) || filterBy
@@ -402,11 +401,11 @@ class SFDeploy
 
       delete @deployOptions.runPackagedTestsOnly
 
-      # p = @conn.metadata.deploy z, @deployOptions
-      # p.check (er, asyncResult) =>
-      #   if er? then return cb er
+      p = @conn.metadata.deploy z, @deployOptions
+      p.check (er, asyncResult) =>
+        if er? then return cb er
 
-      #   if asyncResult? then @checkStatus asyncResult.id, cb
+        if asyncResult? then @checkStatus asyncResult.id, cb
 
 
 module.exports = SFDeploy

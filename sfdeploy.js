@@ -73,7 +73,6 @@ SFDeploy = (function() {
   function SFDeploy(rootPath, filterByOld, conn, options) {
     this.pathFilter = __bind(this.pathFilter, this);
     var key, v, val;
-    console.log(options.filter);
     this.rootPath = rootPath;
     this.conn = conn;
     this.filterBy = Array.prototype.concat([], options.filter) || filterBy;
@@ -355,7 +354,7 @@ SFDeploy = (function() {
   };
 
   SFDeploy.prototype._deploy = function(files, cb) {
-    var E, T, arr, data, doc, fileName, fullName, key, metadataObjectsByDir, n, noMeta, packageMeta, typeDirName, val, value, xml, z, zip, zipFileName, _i, _len, _ref, _ref1;
+    var E, T, arr, data, doc, fileName, fullName, key, metadataObjectsByDir, n, noMeta, p, packageMeta, typeDirName, val, value, xml, z, zip, zipFileName, _i, _len, _ref, _ref1;
     this.getDeployOptions();
     this.files = files || this.files;
     metadataObjectsByDir = {};
@@ -442,7 +441,18 @@ SFDeploy = (function() {
       z = zip.generate({
         type: "nodebuffer"
       });
-      return delete this.deployOptions.runPackagedTestsOnly;
+      delete this.deployOptions.runPackagedTestsOnly;
+      p = this.conn.metadata.deploy(z, this.deployOptions);
+      return p.check((function(_this) {
+        return function(er, asyncResult) {
+          if (er != null) {
+            return cb(er);
+          }
+          if (asyncResult != null) {
+            return _this.checkStatus(asyncResult.id, cb);
+          }
+        };
+      })(this));
     }
   };
 

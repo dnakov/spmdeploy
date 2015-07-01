@@ -13,7 +13,8 @@ nopt = require "nopt"
 
 
 class SFDeploy
-  knownOpts: 
+
+  sfDeployOpts: 
     'checkOnly': Boolean
     'ignoreWarnings': Boolean
     'performRetrieve': Boolean
@@ -25,13 +26,22 @@ class SFDeploy
     'allowMissingFiles': Boolean
     'autoUpdatePackage': Boolean
     'runPackagedTestsOnly': Boolean
+    'useDefaultMetadata': Boolean
+    'usePackageXml': Boolean
+    'apiVersion': String
+    'filter': [String, Array]
+  # knownArgs:
+    # '--use-default-metadata': Boolean
+    # '--use-package-xml': Boolean
+    # '--print-package-xml': Boolean
+    # '--api-version': String
   shortHands: {}
 
   rootPath: null
   currentDeployStatus: {}
+  options: {}
   deployCheckCB: ->
   conn: null
-  apiVersion: '31.0'
   metadata:
     metadataObjects: [
 
@@ -68,35 +78,48 @@ class SFDeploy
 
 
 
-  constructor: (rootPath, filterBy, conn, apiVersion, options) ->
+  constructor: (rootPath, filterByOld, conn, options) ->   
+    console.log(options.filter)
     @rootPath = rootPath
     @conn = conn
-    @apiVersion = apiVersion
-    @filterBy = filterBy
+    @filterBy = Array::concat([], options.filter) || filterBy
     @files = {}
     @dirs = []
+
+    @options = options || nopt(@sfDeployOpts, @shortHands)
     for key, val of options when key in @allowedDeployOptions
       v = val
       if val is "true" then v = true
       if val is "false" then v = false
 
       @deployOptions[key] = v
+    if not @options.apiVersion?
+      @options.apiVersion = '33.0';
+
+  packagexml: (cb) ->
+    @options.printPackageXml = true
+    @options.useDefaultMetadata = true
+    @deploy()
 
   getMetadata: (cb) ->
-    return cb?('blah') unless @conn?
-    @conn.metadata.describe @apiVersion
-    .then (meta) =>
-      @metadata = meta
+    if @options.useDefaultMetadata is true
+      @metadata = require "@spm/sf-default-metadata"
       @getMetaDirs()
-      cb? null, meta
-    ,(err) ->
-      cb? err
+      cb(null, @metadata)
+    else
+      return cb?('blah') unless @conn?
+      @conn.metadata.describe @options.apiVersion
+      .then (meta) =>
+        @metadata = meta
+        @getMetaDirs()
+        cb? null, meta
+      ,(err) ->
+        cb? err
 
   getMetaDirs: ->
     @dirs = []
     for dir in @metadata.metadataObjects
       @dirs.push dir.directoryName
-
 
   pathFilter: (itemPath) =>
 
@@ -105,6 +128,8 @@ class SFDeploy
     # if itemPath.indexOf("-meta.xml") isnt -1
     #   return false
 
+    if(itemPath.indexOf('src/package.xml') isnt -1) 
+      return @options.usePackageXml
 
     if (match? and match.length > 1 and match[1] in @dirs) or @dirs.length == 0
 
@@ -116,7 +141,7 @@ class SFDeploy
         re = new RegExp(item)
         return true if re.test(itemPath)
         i++
-
+    
     return false
 
   createFileList: (cb) ->
@@ -125,13 +150,10 @@ class SFDeploy
       fs.readFile path.join(@rootPath, item),{flag:"r"},(er,results) ->
         cb(er,results)
 
-
-
     fs.listFiles path.resolve(@rootPath),
       filter: @pathFilter
       recursive: 1
     , (err, files) =>
-
       async.map files, areadFile, (er,results) =>
 
         for data, i in results
@@ -259,10 +281,10 @@ class SFDeploy
 
   getDeployOptions: ->
     if process.argv.indexOf('-m') is -1
-      args = nopt(@knownOpts, @shortHands)
+      args = nopt(@sfDeployOpts, @shortHands)
       for key, value of args
         if @deployOptions[key]? then @deployOptions[key] = value
-    console.log @deployOptions
+
   deploy: (filterBy, cb) ->
     @filterBy = filterBy or @filterBy or []
     @getMetadata (er, data) =>
@@ -282,66 +304,109 @@ class SFDeploy
     @files = files or @files
 
 
-    E = (name, children) ->
-      e = doc.createElement(name)
-      i = 0
-
-      while i < children.length
-        e.appendChild children[i]
-        i++
-      e
-    T = (name, text) ->
-      e = doc.createElement(name)
-      e.textContent = text
-      e
-
-
     metadataObjectsByDir = {}
     @metadata.metadataObjects.forEach (metadataObject) ->
       metadataObjectsByDir[metadataObject.directoryName] = metadataObject
 
     zip = new JSZip()
-    doc = xmldom.DOMImplementation::createDocument("http://soap.sforce.com/2006/04/metadata", "Package")
-    doc.documentElement.setAttribute "xmlns", "http://soap.sforce.com/2006/04/metadata"
-
-    for fileName, data of @files when fileName.indexOf("-meta.xml") is -1
+    packageMeta = {}
 
 
+    # for fileName, data of @files when fileName.indexOf('package.xml') is -1
 
-      # throw "File not found: " + fileName unless files[fileName]?
-      zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
+    #   zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
+    #   (zip.file zipFileName, @files[fileName])  if @files[fileName]?
+    #   noMeta = path.basename(zipFileName,'-meta.xml')
+
+    #   fullName = path.basename(noMeta)
+    #   fullName = path.basename(noMeta, path.extname(noMeta))
+    #   typeDirName = path.basename(path.dirname(zipFileName))
+    #   n = metadataObjectsByDir[typeDirName]?.xmlName
+    #   if n?
+    #     packageMeta[n] = packageMeta[n] || []
+
+    #     if packageMeta[n].indexOf(fullName) is -1
+    #       packageMeta[n].push fullName     
+    #   zip.file zipFileName, data
+
+    for fileName, data of @files when fileName.indexOf('package.xml') is -1
+
+      if fileName.indexOf('-meta.xml') isnt -1
+        noMeta = path.basename(fileName,'-meta.xml')
+        fullName = path.basename(noMeta)
+        fullName = path.basename(noMeta, path.extname(noMeta))
+        zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
+        typeDirName = path.basename(path.dirname(zipFileName))
+        if fileName.indexOf('email/') isnt -1
+          # typeDirName = path.basename(path.dirname(path.join(fileName, '../')))
+          zipFileName = path.join("unpackaged/email", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
+          fullName = fileName.substring(fileName.indexOf('email/') + 6).replace('.email', '')
+      else
+        if fileName.indexOf('reports/') isnt -1 or fileName.indexOf('email/') isnt -1
+          typeDirName = path.basename(path.dirname(path.join(fileName, '../')))
+          zipFileName = path.join("unpackaged", typeDirName, path.basename(path.dirname(fileName)), path.basename(fileName))
+          fullName = fileName.substring(fileName.indexOf(typeDirName + '/') + typeDirName.length + 1).replace('.' + typeDirName, '')
+        else
+          zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
+          typeDirName = path.basename(path.dirname(zipFileName))
+          fullName = path.basename(zipFileName, path.extname(zipFileName))
+
+      n = metadataObjectsByDir[typeDirName]?.xmlName
+      if n?
+        packageMeta[n] = packageMeta[n] || []
+
+        if packageMeta[n].indexOf(fullName) is -1
+          packageMeta[n].push fullName
 
       zip.file zipFileName, data
 
-      (zip.file zipFileName + "-meta.xml", @files[fileName + "-meta.xml"])  if @files[fileName + "-meta.xml"]?
-      fullName = path.basename(zipFileName, path.extname(zipFileName))
-      typeDirName = path.basename(path.dirname(zipFileName))
+
+    if @options.usePackageXml isnt true or @options.printPackageXml is true
+      doc = xmldom.DOMImplementation::createDocument("http://soap.sforce.com/2006/04/metadata", "Package")
+      E = (name, children) ->
+        e = doc.createElement(name)
+        i = 0
+
+        while i < children.length
+          e.appendChild children[i]
+          i++
+        e
+      T = (name, text) ->
+        e = doc.createElement(name)
+        e.textContent = text
+        e      
+      
+      doc.documentElement.setAttribute "xmlns", "http://soap.sforce.com/2006/04/metadata"
+      doc.documentElement.appendChild T("version", @options.apiVersion)
+      for key,value of packageMeta
+        arr = []
+        for val in value
+          arr.push T('members', val)
+        arr.push T('name', key)
+
+        doc.documentElement.appendChild E("types", arr)
+
+      xml = new xmldom.XMLSerializer().serializeToString(doc)
+      zip.file "unpackaged/package.xml", xml
+    else
+      zip.file "unpackaged/package.xml", @files['src/package.xml']
+
+    if @options.printPackageXml
+      console.log(xml)
+    else 
+      @conn.metadata.pollTimeout = 100000
 
 
-      doc.documentElement.appendChild E("types", [
-        T("members", fullName)
-        T("name", metadataObjectsByDir[typeDirName]?.xmlName)
-      ])
-
-    doc.documentElement.appendChild T("version", @apiVersion)
-    xml = new xmldom.XMLSerializer().serializeToString(doc)
-
-    zip.file "unpackaged/package.xml", xml
+      z = zip.generate type: "nodebuffer"
 
 
-    @conn.metadata.pollTimeout = 100000
+      delete @deployOptions.runPackagedTestsOnly
 
+      # p = @conn.metadata.deploy z, @deployOptions
+      # p.check (er, asyncResult) =>
+      #   if er? then return cb er
 
-    z = zip.generate type: "nodebuffer"
-
-
-    delete @deployOptions.runPackagedTestsOnly
-    console.log @deployOptions
-    p = @conn.metadata.deploy z, @deployOptions
-    p.check (er, asyncResult) =>
-      if er? then return cb er
-
-      if asyncResult? then @checkStatus asyncResult.id, cb
+      #   if asyncResult? then @checkStatus asyncResult.id, cb
 
 
 module.exports = SFDeploy

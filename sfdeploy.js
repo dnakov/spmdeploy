@@ -18,7 +18,7 @@ extend = require('util')._extend;
 nopt = require("nopt");
 
 SFDeploy = (function() {
-  SFDeploy.prototype.knownOpts = {
+  SFDeploy.prototype.sfDeployOpts = {
     'checkOnly': Boolean,
     'ignoreWarnings': Boolean,
     'performRetrieve': Boolean,
@@ -29,7 +29,11 @@ SFDeploy = (function() {
     'singlePackage': Boolean,
     'allowMissingFiles': Boolean,
     'autoUpdatePackage': Boolean,
-    'runPackagedTestsOnly': Boolean
+    'runPackagedTestsOnly': Boolean,
+    'useDefaultMetadata': Boolean,
+    'usePackageXml': Boolean,
+    'apiVersion': String,
+    'filter': [String, Array]
   };
 
   SFDeploy.prototype.shortHands = {};
@@ -38,11 +42,11 @@ SFDeploy = (function() {
 
   SFDeploy.prototype.currentDeployStatus = {};
 
+  SFDeploy.prototype.options = {};
+
   SFDeploy.prototype.deployCheckCB = function() {};
 
   SFDeploy.prototype.conn = null;
-
-  SFDeploy.prototype.apiVersion = '31.0';
 
   SFDeploy.prototype.metadata = {
     metadataObjects: []
@@ -66,15 +70,16 @@ SFDeploy = (function() {
 
   SFDeploy.prototype.showAllText = false;
 
-  function SFDeploy(rootPath, filterBy, conn, apiVersion, options) {
+  function SFDeploy(rootPath, filterByOld, conn, options) {
     this.pathFilter = __bind(this.pathFilter, this);
     var key, v, val;
+    console.log(options.filter);
     this.rootPath = rootPath;
     this.conn = conn;
-    this.apiVersion = apiVersion;
-    this.filterBy = filterBy;
+    this.filterBy = Array.prototype.concat([], options.filter) || filterBy;
     this.files = {};
     this.dirs = [];
+    this.options = options || nopt(this.sfDeployOpts, this.shortHands);
     for (key in options) {
       val = options[key];
       if (!(__indexOf.call(this.allowedDeployOptions, key) >= 0)) {
@@ -89,21 +94,36 @@ SFDeploy = (function() {
       }
       this.deployOptions[key] = v;
     }
+    if (this.options.apiVersion == null) {
+      this.options.apiVersion = '33.0';
+    }
   }
 
+  SFDeploy.prototype.packagexml = function(cb) {
+    this.options.printPackageXml = true;
+    this.options.useDefaultMetadata = true;
+    return this.deploy();
+  };
+
   SFDeploy.prototype.getMetadata = function(cb) {
-    if (this.conn == null) {
-      return typeof cb === "function" ? cb('blah') : void 0;
+    if (this.options.useDefaultMetadata === true) {
+      this.metadata = require("@spm/sf-default-metadata");
+      this.getMetaDirs();
+      return cb(null, this.metadata);
+    } else {
+      if (this.conn == null) {
+        return typeof cb === "function" ? cb('blah') : void 0;
+      }
+      return this.conn.metadata.describe(this.options.apiVersion).then((function(_this) {
+        return function(meta) {
+          _this.metadata = meta;
+          _this.getMetaDirs();
+          return typeof cb === "function" ? cb(null, meta) : void 0;
+        };
+      })(this), function(err) {
+        return typeof cb === "function" ? cb(err) : void 0;
+      });
     }
-    return this.conn.metadata.describe(this.apiVersion).then((function(_this) {
-      return function(meta) {
-        _this.metadata = meta;
-        _this.getMetaDirs();
-        return typeof cb === "function" ? cb(null, meta) : void 0;
-      };
-    })(this), function(err) {
-      return typeof cb === "function" ? cb(err) : void 0;
-    });
   };
 
   SFDeploy.prototype.getMetaDirs = function() {
@@ -121,6 +141,9 @@ SFDeploy = (function() {
   SFDeploy.prototype.pathFilter = function(itemPath) {
     var i, item, match, re, _ref;
     match = itemPath.match(/src\/(.*?)\//);
+    if (itemPath.indexOf('src/package.xml') !== -1) {
+      return this.options.usePackageXml;
+    }
     if (((match != null) && match.length > 1 && (_ref = match[1], __indexOf.call(this.dirs, _ref) >= 0)) || this.dirs.length === 0) {
       if (!(this.filterBy.length > 0)) {
         return true;
@@ -295,17 +318,20 @@ SFDeploy = (function() {
   };
 
   SFDeploy.prototype.getDeployOptions = function() {
-    var args, key, value;
+    var args, key, value, _results;
     if (process.argv.indexOf('-m') === -1) {
-      args = nopt(this.knownOpts, this.shortHands);
+      args = nopt(this.sfDeployOpts, this.shortHands);
+      _results = [];
       for (key in args) {
         value = args[key];
         if (this.deployOptions[key] != null) {
-          this.deployOptions[key] = value;
+          _results.push(this.deployOptions[key] = value);
+        } else {
+          _results.push(void 0);
         }
       }
+      return _results;
     }
-    return console.log(this.deployOptions);
   };
 
   SFDeploy.prototype.deploy = function(filterBy, cb) {
@@ -329,67 +355,95 @@ SFDeploy = (function() {
   };
 
   SFDeploy.prototype._deploy = function(files, cb) {
-    var E, T, data, doc, fileName, fullName, metadataObjectsByDir, p, typeDirName, xml, z, zip, zipFileName, _ref, _ref1;
+    var E, T, arr, data, doc, fileName, fullName, key, metadataObjectsByDir, n, noMeta, packageMeta, typeDirName, val, value, xml, z, zip, zipFileName, _i, _len, _ref, _ref1;
     this.getDeployOptions();
     this.files = files || this.files;
-    E = function(name, children) {
-      var e, i;
-      e = doc.createElement(name);
-      i = 0;
-      while (i < children.length) {
-        e.appendChild(children[i]);
-        i++;
-      }
-      return e;
-    };
-    T = function(name, text) {
-      var e;
-      e = doc.createElement(name);
-      e.textContent = text;
-      return e;
-    };
     metadataObjectsByDir = {};
     this.metadata.metadataObjects.forEach(function(metadataObject) {
       return metadataObjectsByDir[metadataObject.directoryName] = metadataObject;
     });
     zip = new JSZip();
-    doc = xmldom.DOMImplementation.prototype.createDocument("http://soap.sforce.com/2006/04/metadata", "Package");
-    doc.documentElement.setAttribute("xmlns", "http://soap.sforce.com/2006/04/metadata");
+    packageMeta = {};
     _ref = this.files;
     for (fileName in _ref) {
       data = _ref[fileName];
-      if (!(fileName.indexOf("-meta.xml") === -1)) {
+      if (!(fileName.indexOf('package.xml') === -1)) {
         continue;
       }
-      zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName));
-      zip.file(zipFileName, data);
-      if (this.files[fileName + "-meta.xml"] != null) {
-        zip.file(zipFileName + "-meta.xml", this.files[fileName + "-meta.xml"]);
+      if (fileName.indexOf('-meta.xml') !== -1) {
+        noMeta = path.basename(fileName, '-meta.xml');
+        fullName = path.basename(noMeta);
+        fullName = path.basename(noMeta, path.extname(noMeta));
+        zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName));
+        typeDirName = path.basename(path.dirname(zipFileName));
+        if (fileName.indexOf('email/') !== -1) {
+          zipFileName = path.join("unpackaged/email", path.basename(path.resolve(fileName, "../")), path.basename(fileName));
+          fullName = fileName.substring(fileName.indexOf('email/') + 6).replace('.email', '');
+        }
+      } else {
+        if (fileName.indexOf('reports/') !== -1 || fileName.indexOf('email/') !== -1) {
+          typeDirName = path.basename(path.dirname(path.join(fileName, '../')));
+          zipFileName = path.join("unpackaged", typeDirName, path.basename(path.dirname(fileName)), path.basename(fileName));
+          fullName = fileName.substring(fileName.indexOf(typeDirName + '/') + typeDirName.length + 1).replace('.' + typeDirName, '');
+        } else {
+          zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName));
+          typeDirName = path.basename(path.dirname(zipFileName));
+          fullName = path.basename(zipFileName, path.extname(zipFileName));
+        }
       }
-      fullName = path.basename(zipFileName, path.extname(zipFileName));
-      typeDirName = path.basename(path.dirname(zipFileName));
-      doc.documentElement.appendChild(E("types", [T("members", fullName), T("name", (_ref1 = metadataObjectsByDir[typeDirName]) != null ? _ref1.xmlName : void 0)]));
+      n = (_ref1 = metadataObjectsByDir[typeDirName]) != null ? _ref1.xmlName : void 0;
+      if (n != null) {
+        packageMeta[n] = packageMeta[n] || [];
+        if (packageMeta[n].indexOf(fullName) === -1) {
+          packageMeta[n].push(fullName);
+        }
+      }
+      zip.file(zipFileName, data);
     }
-    doc.documentElement.appendChild(T("version", this.apiVersion));
-    xml = new xmldom.XMLSerializer().serializeToString(doc);
-    zip.file("unpackaged/package.xml", xml);
-    this.conn.metadata.pollTimeout = 100000;
-    z = zip.generate({
-      type: "nodebuffer"
-    });
-    delete this.deployOptions.runPackagedTestsOnly;
-    console.log(this.deployOptions);
-    p = this.conn.metadata.deploy(z, this.deployOptions);
-    return p.check((function(_this) {
-      return function(er, asyncResult) {
-        if (er != null) {
-          return cb(er);
+    if (this.options.usePackageXml !== true || this.options.printPackageXml === true) {
+      doc = xmldom.DOMImplementation.prototype.createDocument("http://soap.sforce.com/2006/04/metadata", "Package");
+      E = function(name, children) {
+        var e, i;
+        e = doc.createElement(name);
+        i = 0;
+        while (i < children.length) {
+          e.appendChild(children[i]);
+          i++;
         }
-        if (asyncResult != null) {
-          return _this.checkStatus(asyncResult.id, cb);
-        }
+        return e;
       };
-    })(this));
+      T = function(name, text) {
+        var e;
+        e = doc.createElement(name);
+        e.textContent = text;
+        return e;
+      };
+      doc.documentElement.setAttribute("xmlns", "http://soap.sforce.com/2006/04/metadata");
+      doc.documentElement.appendChild(T("version", this.options.apiVersion));
+      for (key in packageMeta) {
+        value = packageMeta[key];
+        arr = [];
+        for (_i = 0, _len = value.length; _i < _len; _i++) {
+          val = value[_i];
+          arr.push(T('members', val));
+        }
+        arr.push(T('name', key));
+        doc.documentElement.appendChild(E("types", arr));
+      }
+      xml = new xmldom.XMLSerializer().serializeToString(doc);
+      zip.file("unpackaged/package.xml", xml);
+    } else {
+      zip.file("unpackaged/package.xml", this.files['src/package.xml']);
+    }
+    if (this.options.printPackageXml) {
+      return console.log(xml);
+    } else {
+      this.conn.metadata.pollTimeout = 100000;
+      z = zip.generate({
+        type: "nodebuffer"
+      });
+      return delete this.deployOptions.runPackagedTestsOnly;
+    }
   };
 
   return SFDeploy;

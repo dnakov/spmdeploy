@@ -344,7 +344,8 @@ class SFDeploy
         if fileName.indexOf('reports/') isnt -1 or fileName.indexOf('email/') isnt -1
           typeDirName = path.basename(path.dirname(path.join(fileName, '../')))
           zipFileName = path.join("unpackaged", typeDirName, path.basename(path.dirname(fileName)), path.basename(fileName))
-          fullName = fileName.substring(fileName.indexOf(typeDirName + '/') + typeDirName.length + 1).replace('.' + typeDirName, '')
+          fullName = fileName.substring(fileName.indexOf(typeDirName + '/') + typeDirName.length + 1).replace('.report', '').replace('.email', '')
+
         else
           zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
           typeDirName = path.basename(path.dirname(zipFileName))

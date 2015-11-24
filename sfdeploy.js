@@ -107,7 +107,7 @@ SFDeploy = (function() {
 
   SFDeploy.prototype.getMetadata = function(cb) {
     if (this.options.useDefaultMetadata === true) {
-      this.metadata = require("@spm/sf-default-metadata");
+      this.metadata = require("./sf-default-metadata");
       this.getMetaDirs();
       return cb(null, this.metadata);
     } else {
@@ -316,7 +316,9 @@ SFDeploy = (function() {
           }
           return typeof cb === "function" ? cb(null, _this.parseResult(fullResult)) : void 0;
         } else {
-          _this.checkStatus(id, cb);
+          setTimeout(function() {
+            return _this.checkStatus(id, cb);
+          }, _this.options.checkInterval || 2000);
           return typeof _this.deployCheckCB === "function" ? _this.deployCheckCB(null, fullResult) : void 0;
         }
       };
@@ -447,7 +449,6 @@ SFDeploy = (function() {
         doc.documentElement.appendChild(E("types", arr));
       }
       xml = new xmldom.XMLSerializer().serializeToString(doc);
-      console.log(xml);
       zip.file("unpackaged/package.xml", xml);
     } else {
       for (key in this.files) {
@@ -464,7 +465,6 @@ SFDeploy = (function() {
         type: "nodebuffer"
       });
       delete this.deployOptions.runPackagedTestsOnly;
-      console.log(this.deployOptions);
       p = this.conn.metadata.deploy(z, this.deployOptions);
       return p.check((function(_this) {
         return function(er, asyncResult) {

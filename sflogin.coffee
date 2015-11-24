@@ -7,7 +7,6 @@ path = require("path")
 try
   keytar = require "keytar"
 catch error
-nopt = require "nopt"
 crypto = require "crypto"
 color = require "cli-color"
 basedir = process.cwd()
@@ -94,55 +93,49 @@ class SFLogin
         @writeFile @passFile, JSON.stringify(lst), "utf8", (er, success) =>
         cb?()
 
-  chooseLogin: (cb) ->
-    if process.argv.indexOf('-m') isnt -1
-      cb?(null, @manualLogin())
-    else 
-      fs.readFile @passFile, 'utf-8', (er, data) =>
-        lst = JSON.parse(data)
-        choices = []
-        for key,value of lst.sfdc
-          choices.push
-            value:value
-            name:value.username + ' | ' + color.blue(value.loginUrl)
-            dt:value
-        choices.sort (a,b) ->
-          date1 = new Date(a.lastMod)
-          date2 = new Date(b.lastMod)
-          if date1 > date2 then return -1
-          if date1 < date2 then return 1
-          return 0
-        questions =
-          name: 'login'
-          type:'list'
-          choices: choices
-          message: 'Select Login: '
-        iprompt questions, (answer) =>
-          if keytar?
-            pass = keytar?.getPassword('SPM-SFDC: ' + answer.login.loginUrl, answer.login.username)
-          else
-            decipher = crypto.createDecipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB')
-            pass = if answer.login.password? then decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8') else null
+  chooseLogin: (options, cb) -> 
+    fs.readFile @passFile, 'utf-8', (er, data) =>
+      lst = JSON.parse(data)
+      choices = []
+      for key,value of lst.sfdc
+        choices.push
+          value:value
+          name:value.username + ' | ' + color.blue(value.loginUrl)
+          dt:value
+      choices.sort (a,b) ->
+        date1 = new Date(a.lastMod)
+        date2 = new Date(b.lastMod)
+        if date1 > date2 then return -1
+        if date1 < date2 then return 1
+        return 0
+      questions =
+        name: 'login'
+        type:'list'
+        choices: choices
+        message: 'Select Login: '
+      iprompt questions, (answer) =>
+        if keytar?
+          pass = keytar?.getPassword('SPM-SFDC: ' + answer.login.loginUrl, answer.login.username)
+        else
+          decipher = crypto.createDecipher('aes256', 'NJzdDqqiDUWsQFwLGoRiTHUPcXVWirjUYTgUTsL7BtMZ3jvgDB')
+          pass = if answer.login.password? then decipher.update(answer.login.password, 'hex', 'utf8') + decipher.final('utf8') else null
 
-          @activeLogin =
-            loginUrl: answer.login.loginUrl
-            username: answer.login.username
-            apiVersion: answer.login.apiVersion
-            password: pass
-          cb?(null, @activeLogin)
+        @activeLogin =
+          loginUrl: answer.login.loginUrl
+          username: answer.login.username
+          apiVersion: answer.login.apiVersion
+          password: pass
+        cb?(null, @activeLogin)
 
-  manualLogin: () ->
-    args = nopt(@knownOpts, @shortHands)
-
+  manualLogin: (options, cb) ->
     @activeLogin =
-      username: args.username
-      password: args.password
-      loginUrl: args['login-url']
-      apiVersion: args['api-version']  
+      username: options.username
+      password: options.password
+      loginUrl: options.loginUrl
+      apiVersion: options.apiVersion
+    @login(options, true, cb)
 
-  login: (reinit, cb) ->
-    if process.argv.indexOf('-m') isnt -1
-      @manualLogin()
+  login: (options, reinit, cb) ->
     if reinit isnt true or @activeLogin?
       @_login (er, data) =>
         cb?(null, data)

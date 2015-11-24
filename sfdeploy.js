@@ -385,9 +385,18 @@ SFDeploy = (function() {
         if (fileName.indexOf('email/') !== -1) {
           zipFileName = path.join("unpackaged/email", path.basename(path.resolve(fileName, "../")), path.basename(fileName));
           fullName = fileName.substring(fileName.indexOf('email/') + 6).replace('.email', '');
+          if (zipFileName.indexOf('email/email/') !== -1) {
+            zipFileName = zipFileName.replace('email/email/', 'email/');
+          }
+        }
+        if (fileName.indexOf('documents/') !== -1) {
+          zipFileName = path.join("unpackaged/documents", path.basename(path.resolve(fileName, "../")), path.basename(fileName));
+          if (zipFileName.indexOf('documents/documents/') !== -1) {
+            zipFileName = zipFileName.replace('documents/documents/', 'documents/');
+          }
         }
       } else {
-        if (fileName.indexOf('reports/') !== -1 || fileName.indexOf('email/') !== -1) {
+        if (fileName.indexOf('reports/') !== -1 || fileName.indexOf('email/') !== -1 || fileName.indexOf('documents/') !== -1) {
           typeDirName = path.basename(path.dirname(path.join(fileName, '../')));
           zipFileName = path.join("unpackaged", typeDirName, path.basename(path.dirname(fileName)), path.basename(fileName));
           fullName = fileName.substring(fileName.indexOf(typeDirName + '/') + typeDirName.length + 1).replace('.report', '').replace('.email', '');
@@ -404,9 +413,10 @@ SFDeploy = (function() {
           packageMeta[n].push(fullName);
         }
       }
+      console.log(zipFileName);
       zip.file(zipFileName, data);
     }
-    if (this.options.usePackageXml === null || this.options.printPackageXml === true) {
+    if ((this.options.usePackageXml == null) || this.options.printPackageXml === true) {
       doc = xmldom.DOMImplementation.prototype.createDocument("http://soap.sforce.com/2006/04/metadata", "Package");
       E = function(name, children) {
         var e, i;
@@ -437,6 +447,7 @@ SFDeploy = (function() {
         doc.documentElement.appendChild(E("types", arr));
       }
       xml = new xmldom.XMLSerializer().serializeToString(doc);
+      console.log(xml);
       zip.file("unpackaged/package.xml", xml);
     } else {
       for (key in this.files) {

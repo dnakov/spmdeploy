@@ -336,17 +336,25 @@ class SFDeploy
     for fileName, data of @files when fileName.indexOf('package.xml') is -1
 
       if fileName.indexOf('-meta.xml') isnt -1
+
         noMeta = path.basename(fileName,'-meta.xml')
         fullName = path.basename(noMeta)
         fullName = path.basename(noMeta, path.extname(noMeta))
         zipFileName = path.join("unpackaged", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
         typeDirName = path.basename(path.dirname(zipFileName))
-        if fileName.indexOf('email/') isnt -1
+
+        if fileName.indexOf('email/') isnt -1 
           # typeDirName = path.basename(path.dirname(path.join(fileName, '../')))
           zipFileName = path.join("unpackaged/email", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
           fullName = fileName.substring(fileName.indexOf('email/') + 6).replace('.email', '')
+          if zipFileName.indexOf('email/email/') isnt -1
+            zipFileName = zipFileName.replace('email/email/', 'email/')
+        if fileName.indexOf('documents/') isnt -1
+          zipFileName = path.join("unpackaged/documents", path.basename(path.resolve(fileName, "../")), path.basename(fileName))
+          if zipFileName.indexOf('documents/documents/') isnt -1
+            zipFileName = zipFileName.replace('documents/documents/', 'documents/')
       else
-        if fileName.indexOf('reports/') isnt -1 or fileName.indexOf('email/') isnt -1
+        if fileName.indexOf('reports/') isnt -1 or fileName.indexOf('email/') isnt -1 or fileName.indexOf('documents/') isnt -1
           typeDirName = path.basename(path.dirname(path.join(fileName, '../')))
           zipFileName = path.join("unpackaged", typeDirName, path.basename(path.dirname(fileName)), path.basename(fileName))
           fullName = fileName.substring(fileName.indexOf(typeDirName + '/') + typeDirName.length + 1).replace('.report', '').replace('.email', '')
@@ -362,11 +370,10 @@ class SFDeploy
 
         if packageMeta[n].indexOf(fullName) is -1
           packageMeta[n].push fullName
-
+      console.log zipFileName
       zip.file zipFileName, data
 
-
-    if @options.usePackageXml == null or @options.printPackageXml is true
+    if !@options.usePackageXml? or @options.printPackageXml is true
       doc = xmldom.DOMImplementation::createDocument("http://soap.sforce.com/2006/04/metadata", "Package")
       E = (name, children) ->
         e = doc.createElement(name)
@@ -392,6 +399,7 @@ class SFDeploy
         doc.documentElement.appendChild E("types", arr)
 
       xml = new xmldom.XMLSerializer().serializeToString(doc)
+      console.log(xml)
       zip.file "unpackaged/package.xml", xml
     else
       for key of @files when key.indexOf(@options.usePackageXml) isnt -1

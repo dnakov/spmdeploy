@@ -31,7 +31,7 @@ SFDeploy = (function() {
     'autoUpdatePackage': Boolean,
     'runPackagedTestsOnly': Boolean,
     'useDefaultMetadata': Boolean,
-    'usePackageXml': Boolean,
+    'usePackageXml': String,
     'apiVersion': String,
     'filter': [String, Array]
   };
@@ -75,7 +75,7 @@ SFDeploy = (function() {
     var key, v, val;
     this.rootPath = rootPath;
     this.conn = conn;
-    this.filterBy = Array.prototype.concat([], options.filter) || filterBy;
+    this.filterBy = Array.prototype.concat([], options.filter) || filterByOld;
     this.files = {};
     this.dirs = [];
     this.options = options || nopt(this.sfDeployOpts, this.shortHands);
@@ -92,6 +92,7 @@ SFDeploy = (function() {
         v = false;
       }
       this.deployOptions[key] = v;
+      console.log(this.deployOptions);
     }
     if (this.options.apiVersion == null) {
       this.options.apiVersion = '33.0';
@@ -140,8 +141,8 @@ SFDeploy = (function() {
   SFDeploy.prototype.pathFilter = function(itemPath) {
     var i, item, match, re, _ref;
     match = itemPath.match(/src\/(.*?)\//);
-    if (itemPath.indexOf('src/package.xml') !== -1) {
-      return this.options.usePackageXml;
+    if ((this.options.usePackageXml != null) && itemPath.indexOf(this.options.usePackageXml) !== -1) {
+      return true;
     }
     if (((match != null) && match.length > 1 && (_ref = match[1], __indexOf.call(this.dirs, _ref) >= 0)) || this.dirs.length === 0) {
       if (!(this.filterBy.length > 0)) {
@@ -176,6 +177,12 @@ SFDeploy = (function() {
       recursive: 1
     }, (function(_this) {
       return function(err, files) {
+        var key;
+        for (key in _this.files) {
+          if (files.indexOf(key) === -1) {
+            delete _this.files[key];
+          }
+        }
         return async.map(files, areadFile, function(er, results) {
           var data, i, _i, _len;
           for (i = _i = 0, _len = results.length; _i < _len; i = ++_i) {
@@ -399,7 +406,7 @@ SFDeploy = (function() {
       }
       zip.file(zipFileName, data);
     }
-    if (this.options.usePackageXml !== true || this.options.printPackageXml === true) {
+    if (this.options.usePackageXml === null || this.options.printPackageXml === true) {
       doc = xmldom.DOMImplementation.prototype.createDocument("http://soap.sforce.com/2006/04/metadata", "Package");
       E = function(name, children) {
         var e, i;
@@ -432,7 +439,11 @@ SFDeploy = (function() {
       xml = new xmldom.XMLSerializer().serializeToString(doc);
       zip.file("unpackaged/package.xml", xml);
     } else {
-      zip.file("unpackaged/package.xml", this.files['src/package.xml']);
+      for (key in this.files) {
+        if (key.indexOf(this.options.usePackageXml) !== -1) {
+          zip.file("unpackaged/package.xml", this.files[key]);
+        }
+      }
     }
     if (this.options.printPackageXml) {
       return console.log(xml);
@@ -442,6 +453,7 @@ SFDeploy = (function() {
         type: "nodebuffer"
       });
       delete this.deployOptions.runPackagedTestsOnly;
+      console.log(this.deployOptions);
       p = this.conn.metadata.deploy(z, this.deployOptions);
       return p.check((function(_this) {
         return function(er, asyncResult) {

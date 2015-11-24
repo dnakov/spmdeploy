@@ -14,7 +14,7 @@ nopt = require "nopt"
 
 class SFDeploy
 
-  sfDeployOpts: 
+  sfDeployOpts:
     'checkOnly': Boolean
     'ignoreWarnings': Boolean
     'performRetrieve': Boolean
@@ -27,7 +27,7 @@ class SFDeploy
     'autoUpdatePackage': Boolean
     'runPackagedTestsOnly': Boolean
     'useDefaultMetadata': Boolean
-    'usePackageXml': Boolean
+    'usePackageXml': String
     'apiVersion': String
     'filter': [String, Array]
   # knownArgs:
@@ -78,10 +78,10 @@ class SFDeploy
 
 
 
-  constructor: (rootPath, filterByOld, conn, options) ->   
+  constructor: (rootPath, filterByOld, conn, options) ->
     @rootPath = rootPath
     @conn = conn
-    @filterBy = Array::concat([], options.filter) || filterBy
+    @filterBy = Array::concat([], options.filter) || filterByOld
     @files = {}
     @dirs = []
 
@@ -92,6 +92,7 @@ class SFDeploy
       if val is "false" then v = false
 
       @deployOptions[key] = v
+      console.log(@deployOptions)
     if not @options.apiVersion?
       @options.apiVersion = '33.0';
 
@@ -127,8 +128,8 @@ class SFDeploy
     # if itemPath.indexOf("-meta.xml") isnt -1
     #   return false
 
-    if(itemPath.indexOf('src/package.xml') isnt -1) 
-      return @options.usePackageXml
+    if(@options.usePackageXml? && itemPath.indexOf(@options.usePackageXml) isnt -1)
+      return true
 
     if (match? and match.length > 1 and match[1] in @dirs) or @dirs.length == 0
 
@@ -140,7 +141,7 @@ class SFDeploy
         re = new RegExp(item)
         return true if re.test(itemPath)
         i++
-    
+
     return false
 
   createFileList: (cb) ->
@@ -153,6 +154,8 @@ class SFDeploy
       filter: @pathFilter
       recursive: 1
     , (err, files) =>
+      for key of @files when files.indexOf(key) is -1
+        delete @files[key]
       async.map files, areadFile, (er,results) =>
 
         for data, i in results
@@ -166,7 +169,7 @@ class SFDeploy
   getTextFiles: () ->
     textFiles = {}
     for key, data of @files
-      textFiles[key] = 
+      textFiles[key] =
         text: data.toString('utf-8')
 
     return textFiles
@@ -205,7 +208,7 @@ class SFDeploy
     return parsed unless result.details?
     components = Array::concat(result.details?.componentSuccesses, result.details?.componentFailures)
 
-    total = 
+    total =
       locations: 0
       notCovered: 0
       percentage: 0
@@ -214,7 +217,7 @@ class SFDeploy
     for item in components when item?
 
       for key, data of @files when key.indexOf(item.fileName.replace('unpackaged/', '')) isnt -1
-        
+
         parsed.files[key] = extend item
         if @showAllText or key.indexOf('.cls') isnt -1 or key.indexOf('.trigger') isnt -1
           parsed.files[key].text = data.toString('utf-8')
@@ -232,7 +235,7 @@ class SFDeploy
           parsed.files[key].testResults.locationsNotCovered = Array::concat parsed.files[key].testResults.locationsNotCovered
 
           break if item.numLocations == null or item.numLocationsNotCovered == null
-          
+
           parsed.files[key].testResults.coveragePercentage = 100 * ( parseInt(item.numLocations) - parseInt(item.numLocationsNotCovered) ) / parseInt(item.numLocations)
           total.locations += parseInt item.numLocations
           total.notCovered += parseInt item.numLocationsNotCovered
@@ -244,7 +247,7 @@ class SFDeploy
         for key, data of @files when key.indexOf('triggers/' + item.name + '.trigger') >= 0
           break unless parsed.files[key]?
           parsed.files[key].testResults = extend item
-          
+
           break if item.numLocations == null or item.numLocationsNotCovered == null
 
           parsed.files[key].testResults.coveragePercentage = 100 * ( parseInt(item.numLocations) - parseInt(item.numLocationsNotCovered) ) / parseInt(item.numLocations)
@@ -268,7 +271,7 @@ class SFDeploy
     #   width:20
     #   total:1000000
     @conn.metadata.checkDeployStatus id, true, (er, fullResult) =>
-      
+
       if fullResult.done
         @deployCheckCB?(null, fullResult)
         cb?(null, @parseResult(fullResult))
@@ -286,9 +289,11 @@ class SFDeploy
 
   deploy: (filterBy, cb) ->
     @filterBy = filterBy or @filterBy or []
+
     @getMetadata (er, data) =>
 
       @createFileList (er, files) =>
+
         @_deploy files, cb
 
   deployFileList: (filterBy, cb) ->
@@ -297,7 +302,7 @@ class SFDeploy
       @_deploy files, cb
 
   _deploy: (files, cb) ->
-    
+
     @getDeployOptions()
 
     @files = files or @files
@@ -325,7 +330,7 @@ class SFDeploy
     #     packageMeta[n] = packageMeta[n] || []
 
     #     if packageMeta[n].indexOf(fullName) is -1
-    #       packageMeta[n].push fullName     
+    #       packageMeta[n].push fullName
     #   zip.file zipFileName, data
 
     for fileName, data of @files when fileName.indexOf('package.xml') is -1
@@ -361,7 +366,7 @@ class SFDeploy
       zip.file zipFileName, data
 
 
-    if @options.usePackageXml isnt true or @options.printPackageXml is true
+    if @options.usePackageXml == null or @options.printPackageXml is true
       doc = xmldom.DOMImplementation::createDocument("http://soap.sforce.com/2006/04/metadata", "Package")
       E = (name, children) ->
         e = doc.createElement(name)
@@ -374,8 +379,8 @@ class SFDeploy
       T = (name, text) ->
         e = doc.createElement(name)
         e.textContent = text
-        e      
-      
+        e
+
       doc.documentElement.setAttribute "xmlns", "http://soap.sforce.com/2006/04/metadata"
       doc.documentElement.appendChild T("version", @options.apiVersion)
       for key,value of packageMeta
@@ -389,11 +394,12 @@ class SFDeploy
       xml = new xmldom.XMLSerializer().serializeToString(doc)
       zip.file "unpackaged/package.xml", xml
     else
-      zip.file "unpackaged/package.xml", @files['src/package.xml']
+      for key of @files when key.indexOf(@options.usePackageXml) isnt -1
+        zip.file "unpackaged/package.xml", @files[key]
 
     if @options.printPackageXml
       console.log(xml)
-    else 
+    else
       @conn.metadata.pollTimeout = 100000
 
 
@@ -401,7 +407,7 @@ class SFDeploy
 
 
       delete @deployOptions.runPackagedTestsOnly
-
+      console.log(@deployOptions)
       p = @conn.metadata.deploy z, @deployOptions
       p.check (er, asyncResult) =>
         if er? then return cb er

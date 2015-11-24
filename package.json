@@ -1,5 +1,5 @@
 {
-  "name": "@spm/salesforce",
+  "name": "spmdeploy",
   "version": "1.4.0",
   "description": "SPM module for salesforce deployments",
   "main": "main.js",

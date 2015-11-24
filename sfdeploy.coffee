@@ -103,7 +103,7 @@ class SFDeploy
 
   getMetadata: (cb) ->
     if @options.useDefaultMetadata is true
-      @metadata = require "@spm/sf-default-metadata"
+      @metadata = require "./sf-default-metadata"
       @getMetaDirs()
       cb(null, @metadata)
     else
@@ -270,6 +270,7 @@ class SFDeploy
     #   incomplete:' '
     #   width:20
     #   total:1000000
+
     @conn.metadata.checkDeployStatus id, true, (er, fullResult) =>
 
       if fullResult.done
@@ -278,7 +279,9 @@ class SFDeploy
       #   # if fullResult.success then print.pt Array::concat.call fullResult.details.componentSuccesses
       #   # else print.pt Array::concat.call fullResult.details.componentFailures
       else
-        @checkStatus(id, cb)
+        setTimeout(() => 
+                   @checkStatus(id, cb)
+                  , @options.checkInterval || 2000)
         @deployCheckCB?(null, fullResult)
 
   getDeployOptions: ->
@@ -399,7 +402,6 @@ class SFDeploy
         doc.documentElement.appendChild E("types", arr)
 
       xml = new xmldom.XMLSerializer().serializeToString(doc)
-      console.log(xml)
       zip.file "unpackaged/package.xml", xml
     else
       for key of @files when key.indexOf(@options.usePackageXml) isnt -1
@@ -415,7 +417,6 @@ class SFDeploy
 
 
       delete @deployOptions.runPackagedTestsOnly
-      console.log(@deployOptions)
       p = @conn.metadata.deploy z, @deployOptions
       p.check (er, asyncResult) =>
         if er? then return cb er
